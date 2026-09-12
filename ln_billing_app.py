@@ -27,14 +27,31 @@ def setting(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
-st.set_page_config(page_title="LN Automation – Rechnungserfassung", page_icon="🧾", layout="wide")
+# Favicon: das Logo, falls es im Ordner liegt – sonst als Rückfall das Emoji
+_LOGO_PFAD = Path(__file__).parent / "logo.png"
+st.set_page_config(
+    page_title="LN Automation – Rechnungserfassung",
+    page_icon="logo.png" if _LOGO_PFAD.exists() else "🧾",
+    layout="wide",
+)
 
 st.markdown(
     """
     <style>
-      #MainMenu, footer, .stAppDeployButton, [data-testid="stToolbar"] {visibility: hidden;}
-      [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"],
-      [data-testid="stSidebarCollapseButton"] {visibility: visible !important; display: block !important;}
+      /* Menü, Deploy-Button und die Cloud-Leiste ("Fork", GitHub) ausblenden.
+         Der Header bleibt bestehen – dort sitzt der Aufklapp-Pfeil der Sidebar,
+         der darunter gezielt wieder sichtbar gemacht wird. */
+      #MainMenu, footer, .stAppDeployButton, [data-testid="stStatusWidget"],
+      [data-testid="stToolbar"], [data-testid="stToolbarActions"],
+      [data-testid="stAppToolbar"], .stAppToolbar {visibility: hidden;}
+      [data-testid="stHeader"] {background: transparent;}
+      [data-testid="stSidebarCollapsedControl"],
+      [data-testid="stSidebarCollapsedControl"] *,
+      [data-testid="collapsedControl"],
+      [data-testid="collapsedControl"] * {
+        display: flex !important; visibility: visible !important;
+        opacity: 1 !important; pointer-events: auto !important; z-index: 99999 !important;
+      }
       .block-container {padding-top: 2.2rem;}
       .ln-section {
         font-size: 0.82rem; letter-spacing: 0.12em; text-transform: uppercase;
@@ -44,6 +61,19 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+def _logo_block(breite: int = 190, untertitel: str = "") -> str:
+    """HTML-Kopf mit zentriertem Logo. Ohne Logo-Datei: Schriftzug."""
+    if _LOGO_PFAD.exists():
+        b64 = base64.b64encode(_LOGO_PFAD.read_bytes()).decode()
+        inneres = f'<img src="data:image/png;base64,{b64}" style="width:{breite}px;max-width:60%;" />'
+    else:
+        inneres = '<div style="color:#0f172a;font-size:2rem;font-weight:800;">LN Automation</div>'
+    unter = (f'<div style="color:#64748b;font-size:1.0rem;margin-top:2px;">{untertitel}</div>'
+             if untertitel else "")
+    return (f'<div style="text-align:center;padding:6px 0 2px 0;">{inneres}{unter}</div>'
+            f'<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0 1.2rem 0;" />')
+
 
 # ------------------------------ Anmeldung -----------------------------------
 
@@ -56,11 +86,25 @@ except Exception:  # noqa: BLE001
 _app_pw = setting("APP_PASSWORD")
 
 if (_kunden or _app_pw) and not st.session_state.get("auth_ok"):
-    st.markdown("### LN Automation – Anmeldung")
+    # Die App läuft auf layout="wide" – für die Anmeldeseite die Breite
+    # begrenzen, damit sie aussieht wie bei Produkt 1 (layout="centered").
+    st.markdown(
+        """
+        <style>
+          .block-container {max-width: 46rem !important; padding-top: 3rem !important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        _logo_block(210, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen"),
+        unsafe_allow_html=True,
+    )
     with st.form("login"):
+        st.markdown("**Anmeldung**")
         firma = st.text_input("Firmen-Kennung") if _kunden else ""
         pw = st.text_input("Zugangspasswort", type="password")
-        if st.form_submit_button("Anmelden", type="primary"):
+        if st.form_submit_button("Anmelden", type="primary", width="stretch"):
             if _kunden:
                 f = firma.strip().lower()
                 if f in _kunden and pw == _kunden[f]:
@@ -78,21 +122,10 @@ if (_kunden or _app_pw) and not st.session_state.get("auth_ok"):
 
 # ------------------------------- Kopfbereich --------------------------------
 
-logo = Path(__file__).parent / "logo.png"
-if logo.exists():
-    b64 = base64.b64encode(logo.read_bytes()).decode()
-    st.markdown(
-        f"""
-        <div style="text-align:center;padding:6px 0 2px 0;">
-          <img src="data:image/png;base64,{b64}" style="width:190px;max-width:60%;" />
-          <div style="color:#64748b;font-size:1.0rem;margin-top:2px;">
-            KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen
-          </div>
-        </div>
-        <hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0 1.2rem 0;" />
-        """,
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    _logo_block(190, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen"),
+    unsafe_allow_html=True,
+)
 
 with st.sidebar:
     st.header("Einrichtung")
@@ -147,7 +180,12 @@ genau diesem Schema, ohne Markdown, ohne Erklärungen:
   ]
 }
 
-Beträge als Zahlen mit Punkt als Dezimaltrenner (1234.56). Daten als TT.MM.JJJJ."""
+Beträge als Zahlen mit Punkt als Dezimaltrenner (1234.56). Daten als TT.MM.JJJJ.
+
+Zum Fälligkeitsdatum: Steht kein Datum auf der Rechnung, lässt sich aber aus
+Rechnungsdatum und Zahlungsbedingungen eindeutig berechnen, dann berechne es
+("30 Tage netto" -> Rechnungsdatum + 30 Tage; "sofort fällig" oder "zahlbar bei
+Erhalt" -> Rechnungsdatum). Ist es nicht eindeutig, gib null zurück. Niemals raten."""
 
 
 def extract_invoice(filename: str, data: bytes, key: str) -> dict:
@@ -322,7 +360,9 @@ if uploads and st.button("Rechnungen auslesen", type="primary"):
 
 st.markdown('<div class="ln-section">Ausgelesene Rechnungen</div>', unsafe_allow_html=True)
 
-from excel_report import build_excel, parse_date  # noqa: E402
+from excel_report import (  # noqa: E402
+    build_excel, normalisiere, parse_date, pruefhinweise,
+)
 
 
 def _geld(v, w="EUR"):
@@ -331,7 +371,7 @@ def _geld(v, w="EUR"):
     return f"{v:,.2f} {w or ''}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-invs = st.session_state.invoices
+invs = [normalisiere(i) for i in st.session_state.invoices]
 if not invs:
     st.caption("Noch keine – oben Rechnungen hochladen und auslesen.")
 else:
@@ -339,7 +379,7 @@ else:
         st.caption("ℹ️ Lokaler Modus ohne Datenbank – Daten gelten nur für diese Sitzung. "
                    "Mit QDRANT_URL in den Secrets bleiben sie dauerhaft gespeichert.")
 
-    c1, c2, c3 = st.columns([2.2, 1.6, 1.6])
+    c1, c2 = st.columns([2.4, 2.0])
     sortierung = c1.selectbox(
         "Sortieren nach",
         [
@@ -374,7 +414,21 @@ else:
     else:
         gefiltert.sort(key=lambda i: (i.get("lieferant") or "").lower())
 
-    c3.metric("Summe (brutto)", _geld(sum(i.get("brutto_gesamt") or 0 for i in gefiltert)))
+    # Summen je Währung – verschiedene Währungen werden nicht addiert
+    summen_je_waehrung: dict[str, float] = {}
+    for i in gefiltert:
+        w = i.get("waehrung") or "?"
+        summen_je_waehrung[w] = summen_je_waehrung.get(w, 0.0) + (i.get("brutto_gesamt") or 0)
+
+    if summen_je_waehrung:
+        spalten = st.columns(len(summen_je_waehrung) + 1)
+        for spalte, (w, betrag) in zip(spalten, sorted(summen_je_waehrung.items())):
+            anzahl = sum(1 for i in gefiltert if (i.get("waehrung") or "?") == w)
+            spalte.metric(f"Summe brutto ({w})", _geld(betrag, w))
+            spalte.caption(f"{anzahl} Rechnung(en)")
+        spalten[-1].metric("Rechnungen gesamt", str(len(gefiltert)))
+        if len(summen_je_waehrung) > 1:
+            spalten[-1].caption("Summen getrennt – keine Umrechnung")
 
     import pandas as pd
 
@@ -383,9 +437,26 @@ else:
         "netto_gesamt", "ust_satz_prozent", "ust_betrag", "brutto_gesamt",
         "waehrung", "skonto", "zahlungsbedingungen", "datei",
     ]
-    df = pd.DataFrame([{k: i.get(k) for k in spalten} for i in gefiltert])
+    zeilen = []
+    for i in gefiltert:
+        hinweise = pruefhinweise(i)
+        eintrag = {k: i.get(k) for k in spalten}
+        eintrag["pruefhinweis"] = ("⚠️ " + " · ".join(hinweise)) if hinweise else ""
+        zeilen.append(eintrag)
+    df = pd.DataFrame(zeilen)
     df.columns = ["Lieferant", "Rechnungs-Nr.", "Datum", "Fällig am", "Netto", "USt %",
-                  "USt-Betrag", "Brutto", "Währung", "Skonto", "Zahlungsbedingungen", "Datei"]
+                  "USt-Betrag", "Brutto", "Währung", "Skonto", "Zahlungsbedingungen", "Datei",
+                  "Prüfhinweis"]
+
+    anzahl_auffaellig = sum(1 for i in gefiltert if pruefhinweise(i))
+    if anzahl_auffaellig:
+        st.warning(
+            f"{anzahl_auffaellig} von {len(gefiltert)} Rechnung(en) haben einen Prüfhinweis – "
+            f"siehe letzte Spalte. Es wurde nichts korrigiert, nur markiert."
+        )
+    else:
+        st.success("Rechenproben und Datumsangaben sind bei allen Rechnungen plausibel.")
+
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     with st.expander("🗂 Verwalten / Entfernen"):
