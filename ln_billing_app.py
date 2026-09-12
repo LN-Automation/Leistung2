@@ -29,10 +29,14 @@ def setting(name: str, default: str = "") -> str:
 
 # Favicon: das Logo, falls es im Ordner liegt – sonst als Rückfall das Emoji
 _LOGO_PFAD = Path(__file__).parent / "logo.png"
+
+# Layout: Anmeldeseite schmal wie Produkt 1, nach dem Login breit für die
+# Rechnungstabelle. st.session_state darf vor set_page_config gelesen werden.
+_ANGEMELDET = bool(st.session_state.get("auth_ok"))
 st.set_page_config(
     page_title="LN Automation – Rechnungserfassung",
     page_icon="logo.png" if _LOGO_PFAD.exists() else "🧾",
-    layout="wide",
+    layout="wide" if _ANGEMELDET else "centered",
 )
 
 st.markdown(
@@ -87,18 +91,6 @@ except Exception:  # noqa: BLE001
 _app_pw = setting("APP_PASSWORD")
 
 if (_kunden or _app_pw) and not st.session_state.get("auth_ok"):
-    # Die App läuft auf layout="wide" – für die Anmeldeseite die Breite
-    # begrenzen, damit sie aussieht wie bei Produkt 1 (layout="centered").
-    st.markdown(
-        """
-        <style>
-          /* layout="wide" nachbauen als layout="centered" – nur auf der
-             Anmeldeseite, danach braucht die Tabelle die volle Breite. */
-          .block-container {max-width: 46rem !important; padding-top: 2.2rem !important;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     st.markdown(
         _logo_block(210, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen")
         + '<hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 1.6rem 0;" />',
