@@ -62,17 +62,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-def _logo_block(breite: int = 190, untertitel: str = "") -> str:
-    """HTML-Kopf mit zentriertem Logo. Ohne Logo-Datei: Schriftzug."""
+def _logo_block(breite: int = 230, untertitel: str = "") -> str:
+    """HTML-Kopf mit zentriertem Logo. Ohne Logo-Datei: Schriftzug.
+    Bewusst identisch zu Produkt 1, damit beide Apps gleich aussehen."""
     if _LOGO_PFAD.exists():
         b64 = base64.b64encode(_LOGO_PFAD.read_bytes()).decode()
-        inneres = f'<img src="data:image/png;base64,{b64}" style="width:{breite}px;max-width:60%;" />'
+        inneres = f'<img src="data:image/png;base64,{b64}" style="width:{breite}px;max-width:70%;" />'
     else:
         inneres = '<div style="color:#0f172a;font-size:2rem;font-weight:800;">LN Automation</div>'
-    unter = (f'<div style="color:#64748b;font-size:1.0rem;margin-top:2px;">{untertitel}</div>'
+    unter = (f'<div style="color:#64748b;font-size:1.0rem;margin-top:4px;">{untertitel}</div>'
              if untertitel else "")
-    return (f'<div style="text-align:center;padding:6px 0 2px 0;">{inneres}{unter}</div>'
-            f'<hr style="border:none;border-top:1px solid #e2e8f0;margin:8px 0 1.2rem 0;" />')
+    return (f'<div style="text-align:center;padding:10px 0 6px 0;margin-bottom:10px;">'
+            f'{inneres}{unter}</div>')
 
 
 # ------------------------------ Anmeldung -----------------------------------
@@ -91,13 +92,16 @@ if (_kunden or _app_pw) and not st.session_state.get("auth_ok"):
     st.markdown(
         """
         <style>
-          .block-container {max-width: 46rem !important; padding-top: 3rem !important;}
+          /* layout="wide" nachbauen als layout="centered" – nur auf der
+             Anmeldeseite, danach braucht die Tabelle die volle Breite. */
+          .block-container {max-width: 46rem !important; padding-top: 2.2rem !important;}
         </style>
         """,
         unsafe_allow_html=True,
     )
     st.markdown(
-        _logo_block(210, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen"),
+        _logo_block(210, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen")
+        + '<hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 1.6rem 0;" />',
         unsafe_allow_html=True,
     )
     with st.form("login"):
@@ -123,7 +127,8 @@ if (_kunden or _app_pw) and not st.session_state.get("auth_ok"):
 # ------------------------------- Kopfbereich --------------------------------
 
 st.markdown(
-    _logo_block(190, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen"),
+    _logo_block(190, "KI-Rechnungserfassung – Eingangsrechnungen automatisch auslesen")
+    + '<hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 1.4rem 0;" />',
     unsafe_allow_html=True,
 )
 
