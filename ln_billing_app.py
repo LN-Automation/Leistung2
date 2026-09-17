@@ -199,7 +199,11 @@ Rechnungsdatum und Zahlungsbedingungen eindeutig berechnen, dann berechne es
 Erhalt" -> Rechnungsdatum). Ist es nicht eindeutig, gib null zurück. Niemals raten."""
 
 
-def extract_invoice(filename: str, data: bytes, key: str) -> dict:
+MODELL = "claude-sonnet-4-6"
+
+
+def extract_invoice(filename: str, data: bytes, key: str) -> tuple[dict, dict]:
+    """Rechnung auslesen. Liefert (Daten, Verbrauchsdatensatz)."""
     from anthropic import Anthropic
 
     suffix = Path(filename).suffix.lower()
@@ -226,7 +230,7 @@ def extract_invoice(filename: str, data: bytes, key: str) -> dict:
         raise RuntimeError(f"Format {suffix} wird nicht unterstützt (PDF, PNG, JPG).")
 
     msg = Anthropic(api_key=key).messages.create(
-        model="claude-sonnet-4-6",
+        model=MODELL,
         max_tokens=3000,
         messages=[{"role": "user", "content": [block, {"type": "text", "text": EXTRAKTIONS_PROMPT}]}],
     )
@@ -234,7 +238,9 @@ def extract_invoice(filename: str, data: bytes, key: str) -> dict:
     text = text.replace("```json", "").replace("```", "").strip()
     result = json.loads(text)
     result["datei"] = filename
-    return result
+    from ln_nutzung import datensatz
+
+    return result, datensatz(filename, MODELL, getattr(msg, "usage", None))
 
 
 # --------------------------- Speicherung (Qdrant) ---------------------------
@@ -322,6 +328,44 @@ def einstellungen_speichern(daten: dict) -> None:
              points=[PointStruct(id=1, vector=[0.0], payload=daten)])
 
 
+def _coll_nutzung() -> str:
+    return "nutzung_" + _slug(st.session_state.get("kunde", "lokal"))
+
+
+def nutzung_speichern(satz: dict) -> None:
+    """Einen Verbrauchsdatensatz ablegen. Ohne Qdrant nur für die Sitzung."""
+    st.session_state.setdefault("_nutzung_lokal", []).append(satz)
+    if not storage_on():
+        return
+    from qdrant_client.models import Distance, PointStruct, VectorParams
+
+    c = _qdrant()
+    if not c.collection_exists(_coll_nutzung()):
+        c.create_collection(
+            collection_name=_coll_nutzung(),
+            vectors_config=VectorParams(size=1, distance=Distance.COSINE),
+        )
+    c.upsert(collection_name=_coll_nutzung(),
+             points=[PointStruct(id=str(uuid.uuid4()), vector=[0.0],
+                                 payload=satz)])
+
+
+def nutzung_laden() -> list[dict]:
+    lokal = st.session_state.get("_nutzung_lokal", [])
+    if not storage_on():
+        return lokal
+    c = _qdrant()
+    if not c.collection_exists(_coll_nutzung()):
+        return lokal
+    out, offset = [], None
+    while True:
+        pts, offset = c.scroll(collection_name=_coll_nutzung(), limit=500,
+                               with_payload=True, offset=offset)
+        out.extend(p.payload for p in pts)
+        if offset is None:
+            return out
+
+
 def load_saved() -> list[dict]:
     if not storage_on():
         return []
@@ -386,6 +430,7 @@ from ln_dashboard import (  # noqa: E402
     dashboard_bild, kurzueberblick, render_dashboard,
 )
 from ln_datev import render_datev  # noqa: E402
+from ln_nutzung import render_nutzung  # noqa: E402
 
 
 def _geld(v, w="EUR"):
@@ -396,8 +441,8 @@ def _geld(v, w="EUR"):
 
 invs = [normalisiere(i) for i in st.session_state.invoices]
 
-tab_hoch, tab_liste, tab_dash, tab_export = st.tabs(
-    ["Hochladen", "Rechnungen", "Dashboard", "Exporte"]
+tab_hoch, tab_liste, tab_dash, tab_export, tab_nutzung = st.tabs(
+    ["Hochladen", "Rechnungen", "Dashboard", "Exporte", "Nutzung"]
 )
 
 # ------------------------------ Reiter: Hochladen ---------------------------
@@ -432,11 +477,12 @@ with tab_hoch:
         fehler = []
         for i, up in enumerate(uploads, start=1):
             try:
-                inv = extract_invoice(up.name, up.getvalue(), api_key)
+                inv, verbrauch = extract_invoice(up.name, up.getvalue(), api_key)
                 st.session_state.invoices = [
                     r for r in st.session_state.invoices if r.get("datei") != up.name
                 ] + [inv]
                 save_inv(inv)
+                nutzung_speichern(verbrauch)
                 prog.progress(i / len(uploads), text=f"{up.name} ausgelesen")
             except Exception as e:  # noqa: BLE001
                 fehler.append(f"{up.name}: {e}")
@@ -649,3 +695,16 @@ with tab_export:
 
         with e_datev:
             render_datev(invs, einstellungen_laden, einstellungen_speichern)
+
+
+# ------------------------------- Reiter: Nutzung ----------------------------
+
+with tab_nutzung:
+    st.markdown('<div class="ln-section">Verbrauch und Kosten</div>',
+                unsafe_allow_html=True)
+    st.caption(
+        "Jedes Auslesen einer Rechnung verbraucht Tokens beim KI-Anbieter. "
+        "Hier steht, wie viel – nichts davon ist geschätzt, die Zahlen kommen "
+        "direkt aus der Antwort der Schnittstelle."
+    )
+    render_nutzung(nutzung_laden(), einstellungen_laden, einstellungen_speichern)

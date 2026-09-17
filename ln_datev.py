@@ -296,13 +296,38 @@ def render_datev(invs: list[dict], laden, speichern) -> None:
         }
 
     st.divider()
-    s1, s2 = st.columns([1, 3])
+    s1, s2, s3 = st.columns([1.2, 1.2, 2])
     if s1.button("Einstellungen speichern", type="primary", width="stretch"):
         e["geaendert_am"] = datetime.now().strftime("%d.%m.%Y %H:%M")
         speichern(e)
         st.success("Gespeichert.")
+
+    # Zurücksetzen mit Rückfrage – sonst ist die halbe Kontierung mit einem
+    # Fehlklick weg.
+    if st.session_state.get("datev_reset_frage"):
+        st.warning("Wirklich alle DATEV-Einstellungen und Kontierungen löschen? "
+                   "Das lässt sich nicht rückgängig machen.")
+        r1, r2 = st.columns(2)
+        if r1.button("Ja, alles zurücksetzen", type="primary", width="stretch"):
+            leer = standard_einstellungen()
+            # Preise gehören zur Nutzungsübersicht und bleiben erhalten
+            alt = laden() or {}
+            for k in ("preis_input", "preis_output", "kurs_usd_eur"):
+                if k in alt:
+                    leer[k] = alt[k]
+            speichern(leer)
+            st.session_state["datev"] = leer
+            st.session_state["datev_reset_frage"] = False
+            st.rerun()
+        if r2.button("Abbrechen", width="stretch"):
+            st.session_state["datev_reset_frage"] = False
+            st.rerun()
+    elif s2.button("Alles zurücksetzen", width="stretch"):
+        st.session_state["datev_reset_frage"] = True
+        st.rerun()
+
     if e.get("geaendert_am"):
-        s2.caption(f"Zuletzt gespeichert: {e['geaendert_am']}")
+        s3.caption(f"Zuletzt gespeichert: {e['geaendert_am']}")
 
     st.divider()
     st.markdown("**Buchungsstapel erzeugen**")
